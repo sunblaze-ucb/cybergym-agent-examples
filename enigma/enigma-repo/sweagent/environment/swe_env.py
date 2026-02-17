@@ -259,16 +259,17 @@ class SWEEnv(gym.Env):
                 )
                 for file_name in self.record["challenge"]["files"]:
                     self.logger.debug(f"Copying file {file_name} to container")
+                    self.communicate(f'mkdir -p "{Path("/" + self._repo_name + "/" + file_name).parent}"')
                     copy_anything_to_container(
                         self.container_obj,
                         str(Path(self.record["repo"].removeprefix("local://")) / file_name),
-                        "/" + self._repo_name,
+                        "/" + self._repo_name + "/" + file_name,
                     )
             else:
                 copy_anything_to_container(
                     self.container_obj,
                     self.record["repo"].removeprefix("local://"),
-                    "/" + self._repo_name,
+                    "/" + self._repo_name + "/" + file_name,
                 )
             self.communicate_with_handling(
                 input=f"chown -R root:root {self._repo_name}",
@@ -1007,6 +1008,8 @@ class SWEEnv(gym.Env):
             output: output from container
         """
         assert self.container is not None
+        if input.strip().split()[0] in {"decompile", "disassemble"}:
+            no_output_timeout_duration = timeout_duration = 120000
         if no_output_timeout_duration is None:
             no_output_timeout_duration = timeout_duration
         if input.strip() != "exit":

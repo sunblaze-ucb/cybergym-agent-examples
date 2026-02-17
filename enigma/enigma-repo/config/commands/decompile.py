@@ -64,7 +64,7 @@ class Decompile:
         basename = Path(binary).name
         decomp_output_path = Path(f"/ghidra_out/{basename}.decomp.json")
         if not decomp_output_path.exists():
-            if not self.run_ghidra(basename, decomp_output_path):
+            if not self.run_ghidra(binary, decomp_output_path):
                 return f"Error: Decompilation for {binary} not available"
         decomp_output = decomp_output_path.read_text()
         try:

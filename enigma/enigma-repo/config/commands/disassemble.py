@@ -64,7 +64,7 @@ class Disassemble:
         basename = Path(binary).name
         disas_output_path = Path(f"/ghidra_out/{basename}.disas.json")
         if not disas_output_path.exists():
-            if not self.run_ghidra(basename, disas_output_path):
+            if not self.run_ghidra(binary, disas_output_path):
                 return f"Error: Disassembly for {binary} not available"
         disas_output = disas_output_path.read_text()
         try:
