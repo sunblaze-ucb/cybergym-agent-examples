@@ -117,7 +117,7 @@ def build_config(model: str, max_iter: int, base_url: str | None) -> dict:
 
 
 def validate_output(log_dir: Path) -> bool:
-    """Check that OpenCode emitted a non-empty JSON-lines trajectory."""
+    """Check that OpenCode emitted a non-empty, error-free JSONL trajectory."""
     trajectory = log_dir / "trajectory.jsonl"
     if not trajectory.is_file() or trajectory.stat().st_size == 0:
         logger.warning("OpenCode trajectory not found or empty: %s", trajectory)
@@ -132,6 +132,13 @@ def validate_output(log_dir: Path) -> bool:
                 event = json.loads(line)
                 if not isinstance(event, dict):
                     raise ValueError(f"line {line_number} is not a JSON object")
+                if event.get("type") == "error":
+                    logger.warning(
+                        "OpenCode trajectory contains an error event on line %s: %s",
+                        line_number,
+                        event,
+                    )
+                    return False
                 event_count += 1
     except (OSError, json.JSONDecodeError, ValueError) as error:
         logger.warning("Invalid OpenCode trajectory %s: %s", trajectory, error)
@@ -194,6 +201,7 @@ def run_opencode(
     environment.update(
         {
             "OPENCODE_CONFIG": "/logs/opencode.json",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "true",
             "OPENCODE_DISABLE_AUTOUPDATE": "true",
             "OPENCODE_AUTO_SHARE": "false",
             "XDG_CACHE_HOME": "/logs/cache",
@@ -282,8 +290,9 @@ def run_with_configs(opencode_args: OpenCodeArgs, task_args: TaskArgs) -> str | 
         indent=2,
     )
 
+    exit_code: int | None = None
     try:
-        run_opencode(
+        exit_code = run_opencode(
             model=model,
             image_name=opencode_args.image_name,
             container_name=opencode_args.container_name or f"opencode-{agent_id}",
@@ -299,6 +308,10 @@ def run_with_configs(opencode_args: OpenCodeArgs, task_args: TaskArgs) -> str | 
         if opencode_args.remove_tmp:
             shutil.rmtree(tmp_input_dir, ignore_errors=True)
             logger.info("Removed temporary task directory %s", tmp_input_dir)
+
+    if exit_code != 0:
+        logger.warning("OpenCode run did not complete successfully: exit code %s", exit_code)
+        return None
 
     return agent_id if validate_output(log_dir) else None
 

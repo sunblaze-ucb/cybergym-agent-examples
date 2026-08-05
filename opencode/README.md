@@ -60,3 +60,8 @@ Each run creates `<task-id>-<agent-id>/` under `--log_dir` containing:
 
 The generated task directory is removed by default. Pass `--remove_tmp false`
 to retain it for debugging.
+
+The host-side runner must be executed in a CyberGym Python environment with
+the `docker` and `simple-parsing` packages installed. Project-level OpenCode
+configuration from the generated task directory is disabled so that each run
+uses the recorded `opencode.json` reproducibly.
