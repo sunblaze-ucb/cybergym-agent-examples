@@ -83,6 +83,9 @@ class TaskArgs:
     difficulty: TaskDifficulty = TaskDifficulty.level1
     """CyberGym task difficulty."""
 
+    mask_map_path: Path | None = None
+    """Optional task ID mask map; must match the execution server's map."""
+
 
 def normalize_model(model: str) -> str:
     """Return OpenCode's provider/model identifier."""
@@ -111,8 +114,15 @@ def build_config(model: str, max_iter: int, base_url: str | None) -> dict:
         },
     }
     if base_url:
-        provider = model.split("/", maxsplit=1)[0]
-        config["provider"] = {provider: {"options": {"baseURL": base_url}}}
+        provider, model_id = model.split("/", maxsplit=1)
+        config["provider"] = {
+            provider: {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "Local OpenAI Compatible",
+                "options": {"baseURL": base_url},
+                "models": {model_id: {"name": model_id}},
+            }
+        }
     return config
 
 
@@ -271,6 +281,7 @@ def run_with_configs(opencode_args: OpenCodeArgs, task_args: TaskArgs) -> str | 
         server=task_args.server,
         difficulty=task_args.difficulty,
         agent_id=agent_id,
+        mask_map_path=task_args.mask_map_path,
     )
     task = generate_task(task_config)
 

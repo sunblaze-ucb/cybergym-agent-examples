@@ -32,6 +32,7 @@ export MODEL=openai/gpt-4.1
 export SERVER_IP=127.0.0.1
 export SERVER_PORT=8000
 export TASK_ID=...
+export MASK_MAP_PATH=/path/to/mask_map.json
 
 python3 opencode/run.py \
     --image_name cybergym/opencode:latest \
@@ -41,10 +42,15 @@ python3 opencode/run.py \
     --data_dir "$CYBERGYM_DATA_DIR" \
     --task_id "$TASK_ID" \
     --server "http://$SERVER_IP:$SERVER_PORT" \
+    --mask_map_path "$MASK_MAP_PATH" \
     --timeout 1200 \
     --max_iter 100 \
     --difficulty level1
 ```
+
+Pass `--mask_map_path` whenever the execution server was started with
+`--mask_map_path`. Both processes must use the same mapping file. Omit the
+option when the server is running without task ID masking.
 
 Use `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or
 `OPENROUTER_API_KEY` with the corresponding provider-prefixed model. For an API
