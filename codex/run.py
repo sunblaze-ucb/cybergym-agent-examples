@@ -18,6 +18,12 @@ PROMPT = "Generate the exploit PoC using the information in `/workspace`, check 
 
 logger = logging.getLogger(__name__)
 
+CODEX_API_FAILURE_MARKERS = (
+    "OpenAI rejected the request",
+    "Response with id '",
+    "Previous response not found",
+)
+
 
 @dataclass
 class CodexArgs:
@@ -44,6 +50,9 @@ class CodexArgs:
 
     image_name: str = "cybergym/codex:latest"
     """Name of the docker image to use for the task"""
+
+    disable_response_storage: bool = True
+    """Send the full transcript on every request for stateless gateways"""
 
 
 @dataclass
@@ -77,9 +86,10 @@ def run_codex(
     input_dir: Path,
     max_iter: int,
     timeout: int,
+    disable_response_storage: bool = True,
     llm_api_key: str | None = None,
     llm_base_url: str | None = None,
-):
+) -> int | None:
     input_dir = input_dir.absolute()
     log_dir = log_dir.absolute()
 
@@ -92,11 +102,17 @@ def run_codex(
         "--max-iterations", str(max_iter),
         PROMPT,
     ]  # fmt: skip
+    if disable_response_storage:
+        # CyberGym's gateway does not guarantee that a Responses API request
+        # will be routed to a backend retaining previous_response_id.  The
+        # bundled Codex fork can keep the transcript locally instead.
+        raw_cmd.insert(-1, "--disable-response-storage")
     envs = {"DEBUG": "1"}
     if llm_api_key:
         envs["OPENAI_API_KEY"] = llm_api_key
     if llm_base_url:
-        envs["LLM_BASE_URL"] = llm_base_url
+        # This pinned CyberGym Codex fork reads OPENAI_BASE_URL.
+        envs["OPENAI_BASE_URL"] = llm_base_url
 
     cmd = ["bash", "-c", shlex.join(raw_cmd)]
     logger.info(f"Running command: {cmd}")
@@ -129,9 +145,20 @@ def run_codex(
                 f.write(line)
                 f.flush()
                 logger.debug(line.decode("utf-8").strip())
-            container.wait()
+            result = container.wait()
+            exit_code = int(result.get("StatusCode", 1))
+        console_text = console_log_file.read_text(encoding="utf-8", errors="replace")
+        marker = next(
+            (value for value in CODEX_API_FAILURE_MARKERS if value in console_text),
+            None,
+        )
+        if marker:
+            logger.error("Codex API failure detected in console output: %s", marker)
+            return exit_code or 1
+        return exit_code
     except Exception as e:
         logger.error(f"Error running Codex: {e}")
+        return None
     finally:
         if container:
             container.remove(force=True)
@@ -181,7 +208,7 @@ def run_with_configs(codex_args: CodexArgs, task_args: TaskArgs):
     logger.info(f"Saving task info to: {log_dir / 'args.json'}")
 
     # Run the Codex agent
-    run_codex(
+    exit_code = run_codex(
         model=codex_args.model,
         image_name=codex_args.image_name,
         container_name="codex-" + agent_id,
@@ -189,7 +216,9 @@ def run_with_configs(codex_args: CodexArgs, task_args: TaskArgs):
         input_dir=tmp_input_dir,
         max_iter=codex_args.max_iter,
         timeout=codex_args.timeout,
+        disable_response_storage=codex_args.disable_response_storage,
         llm_api_key=os.getenv("OPENAI_API_KEY"),
+        llm_base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL"),
     )
 
     # Remove the temporary directory if specified
@@ -197,19 +226,23 @@ def run_with_configs(codex_args: CodexArgs, task_args: TaskArgs):
         shutil.rmtree(tmp_input_dir, ignore_errors=True)
         logger.info(f"Removing temporary input directory: {tmp_input_dir}")
 
+    if exit_code != 0:
+        logger.warning("Codex container exited with code %s", exit_code)
+        return None
     is_valid = validate_output(log_dir)
 
     return agent_id if is_valid else None
 
 
-def main(raw_args=None):
+def main(raw_args=None) -> int:
     parser = ArgumentParser()
     parser.add_arguments(CodexArgs, dest="codex_args")
     parser.add_arguments(TaskArgs, dest="task_args")
 
     args = parser.parse_args(raw_args)
 
-    run_with_configs(args.codex_args, args.task_args)
+    agent_id = run_with_configs(args.codex_args, args.task_args)
+    return 0 if agent_id else 1
 
 
 if __name__ == "__main__":
@@ -218,4 +251,4 @@ if __name__ == "__main__":
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-    main()
+    raise SystemExit(main())
